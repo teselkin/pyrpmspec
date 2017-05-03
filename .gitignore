@@ -1,5 +1,6 @@
 .idea/
 .tox/
+tmp/
 *.egg-info/
 MANIFEST
 *.pyc
