@@ -6,6 +6,7 @@ import yaml
 
 import codecs
 
+
 class RpmSpecParser(object):
     sections = {
         '_global': {
@@ -145,10 +146,11 @@ class RpmSpecParser(object):
                 for lineno, line in section.content:
                     if re.match(r'^\s*(#.*|\%.*|)$', line):
                         continue
-                    m = re.match(r'^\s*(?P<key>\w+)\s*:\s*(?P<value>.*)\s*$', line)
-                    #kv = [x.strip() for x in line.split(':', maxsplit=1)]
-                    #print(line)
-                    #if len(kv) > 1:
+                    m = re.match(r'^\s*(?P<key>\w+)\s*:\s*(?P<value>.*)\s*$',
+                                 line)
+                    # kv = [x.strip() for x in line.split(':', maxsplit=1)]
+                    # print(line)
+                    # if len(kv) > 1:
                     if m:
                         key = m.group('key')
                         value = m.group('value')
@@ -157,15 +159,16 @@ class RpmSpecParser(object):
                             spec.sources[key] = value
                         elif key_.startswith('patch'):
                             spec.patches[key] = value
-                        elif key_ in ['requires', 'buildrequires', 'provides',
-                                     'conflicts', 'obsoletes', 'buildconflicts']:
+                        elif key_ in ['requires', 'buildrequires',
+                                      'provides', 'conflicts',
+                                      'obsoletes', 'buildconflicts']:
                             spec.get(key_).append(value)
                         else:
                             spec.set(key_, value)
-        #print(spec.dump())
+        # print(spec.dump())
         print(yaml.dump(spec.dump(),
-                          default_style='',
-                          default_flow_style=False))
+                        default_style='',
+                        default_flow_style=False))
 
         return spec
 
@@ -181,8 +184,8 @@ class RpmSpecParser(object):
                 continue
             if re.match(r'^%\w.*$', line[1]):
                 if re.match(r'^%if\s*.*$', line[1]):
-                    #if section.name == 'package':
-                    #    section = section.parent
+                    # if section.name == 'package':
+                    #     section = section.parent
                     section = section.subsection(name='if')
                     section.content.append(line)
                     section = section.subsection(name='_then')
@@ -272,9 +275,9 @@ class RpmSpecSection(object):
         return self._content
 
 
-
 class RpmSpecChangelog(object):
-    re_rpm_changelog_header = re.compile(r'^\s*\*\s+(\w{3}\s\w{3}\s\d\d?\s\d{4})\s(.+)\s<(.*)>[\s-]+(.*)$')
+    re_rpm_changelog_header = re.compile(
+        r'^\s*\*\s+(\w{3}\s\w{3}\s\d\d?\s\d{4})\s(.+)\s<(.*)>[\s-]+(.*)$')
 
     def __init__(self):
         self.changes = []
@@ -285,10 +288,11 @@ class RpmSpecChangelog(object):
                 for lineno, line in section.content:
                     match = self.re_rpm_changelog_header.match(line)
                     if match:
-                        self.changes.append(RpmSpecChangelogChange(date=match.group(1),
-                                                                   author=match.group(2),
-                                                                   email=match.group(3),
-                                                                   title=match.group(4)))
+                        self.changes.append(RpmSpecChangelogChange(
+                            date=match.group(1),
+                            author=match.group(2),
+                            email=match.group(3),
+                            title=match.group(4)))
 
 
 class RpmSpecChangelogChange(object):
@@ -306,7 +310,7 @@ class RpmSpecChangelogChange(object):
                                                  self.title))
 
 
-class RpmSpecObjectMixin():
+class RpmSpecObjectMixin(object):
     def __getattr__(self, item):
         obj = self._schema[item]
         if obj.get('private', False):
@@ -333,7 +337,7 @@ class RpmSpecObjectMixin():
     def get(self, key, default=Exception()):
         try:
             return getattr(self, key)
-        except:
+        except Exception:
             if isinstance(default, Exception):
                 raise Exception("Key '{}' not found".format(key))
             else:
