@@ -6,8 +6,8 @@ import sh
 
 import codecs
 
-from pyrpmspec.objects import (RpmSpecSourcePackage,
-    RpmSpecChangelogChange)
+from pyrpmspec.objects import (RpmSpecSource,
+    RpmSpecChangelogChange, RpmSpec)
 
 
 class RpmSpecParser(object):
@@ -157,7 +157,7 @@ class RpmSpecParser(object):
             r'^\s*\*\s+(?P<date>\w{3}\s\w{3}\s\d\d?\s\d{4})\s(?P<author>.+)'
             r'\s<(?P<author_email>.*)>[\s-]+(?P<title>.*)$')
 
-        spec = RpmSpecSourcePackage()
+        spec = RpmSpec()
         for section in root:
             if section.name == '_text':
                 for lineno, line in section.content:
@@ -169,15 +169,15 @@ class RpmSpecParser(object):
                         value = m.group('value')
                         key_ = key.split('(')[0].lower()
                         if key_.startswith('source'):
-                            spec.sources[key] = value
+                            spec.source.sources[key] = value
                         elif key_.startswith('patch'):
-                            spec.patches[key] = value
+                            spec.source.patches[key] = value
                         elif key_ in ['requires', 'buildrequires',
                                       'provides', 'conflicts',
                                       'obsoletes', 'buildconflicts']:
-                            spec.get(key_).append(value)
+                            spec.source.get(key_).append(value)
                         else:
-                            spec.set(key_, value)
+                            spec.source.set(key_, value)
             elif section.name == 'changelog':
                 for lineno, line in section.content:
                     m = re_rpm_changelog_header.match(line)
@@ -188,6 +188,8 @@ class RpmSpecParser(object):
                         change.author_email = m.group('author_email')
                         change.title = m.group('title')
                         spec.changelog.append(change)
+            elif section.name == 'package':
+                pass
 
         return spec
 

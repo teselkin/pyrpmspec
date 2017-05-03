@@ -49,13 +49,13 @@ class RpmSpecObjectMixin(object):
                 schema = self._schema[key]
                 name = schema.get('name', key)
                 dump = schema.get('dump', None)
-                sorted = schema.get('sorted', True)
+                sortable = schema.get('sortable', True)
                 if dump:
                     result[name] = dump(self.__dict__[key])
                 else:
                     result[name] = self.__dict__[key]
                 if isinstance(result[name], list):
-                    if sorted:
+                    if sortable:
                         result[name].sort()
         return result
 
@@ -85,7 +85,28 @@ class RpmSpecObjectMixin(object):
         return self
 
 
-class RpmSpecSourcePackage(RpmSpecObjectMixin):
+class RpmSpec(RpmSpecObjectMixin):
+    _schema = {
+        'source': {
+            'default': 'RpmSpecSource',
+            'callable': True,
+            'dump': lambda x: x.dump(),
+        },
+        'packages': {
+            'default': 'list',
+            'callable': True,
+            'sortable': False,
+        },
+        'changelog': {
+            'default': 'list',
+            'callable': True,
+            'sortable': False,
+            'dump': lambda x: [xx.dump() for xx in x],
+        }
+    }
+
+
+class RpmSpecSource(RpmSpecObjectMixin):
     _schema = {
         'name': {
             'default': '',
@@ -195,12 +216,6 @@ class RpmSpecSourcePackage(RpmSpecObjectMixin):
             'default': 'list',
             'callable': True,
         },
-        'changelog': {
-            'default': 'list',
-            'callable': True,
-            'sorted': False,
-            'dump': lambda x: [xx.dump() for xx in x],
-        }
     }
 
 
