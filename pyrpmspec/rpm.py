@@ -1,3 +1,4 @@
+#!/usr/bin/python
 
 import os
 import re
@@ -114,14 +115,22 @@ class RpmSpecParser(object):
     def __init__(self, use_rpmspec=True):
         self.use_rpmspec = use_rpmspec
 
-    def get_content(self, path):
+    def find_specs(self, path):
         specs = []
-        for root, dirs, files in os.walk(path):
-            for f in files:
-                if f.endswith('.spec'):
-                    specs.append(os.path.join(root, f))
 
-        for path in specs:
+        if os.path.isdir(path):
+            for root, dirs, files in os.walk(path):
+                for f in files:
+                    if f.endswith('.spec'):
+                        specs.append(os.path.join(root, f))
+        elif os.path.isfile(path):
+            if path.endswith('.spec'):
+                specs.append(path)
+
+        return specs
+
+    def spec_content(self, path):
+        for path in self.find_specs(path):
             content = []
             if self.use_rpmspec:
                 for line in sh.rpmspec('-P', path):
@@ -133,11 +142,11 @@ class RpmSpecParser(object):
 
             yield path, content
 
-    def parse_path(self, path):
-        specs = []
-        for path, content in self.get_content(path):
-            specs.append(self.parse_sections(self.split(content)))
-        return specs
+    def parse(self, path):
+        parsed = []
+        for path, content in self.spec_content(path):
+            parsed.append(self.parse_sections(self.split(content)))
+        return parsed
 
     def parse_sections(self, root):
         spec = RpmSpecSourcePackage()
@@ -148,9 +157,6 @@ class RpmSpecParser(object):
                         continue
                     m = re.match(r'^\s*(?P<key>\w+)\s*:\s*(?P<value>.*)\s*$',
                                  line)
-                    # kv = [x.strip() for x in line.split(':', maxsplit=1)]
-                    # print(line)
-                    # if len(kv) > 1:
                     if m:
                         key = m.group('key')
                         value = m.group('value')
@@ -165,10 +171,10 @@ class RpmSpecParser(object):
                             spec.get(key_).append(value)
                         else:
                             spec.set(key_, value)
-        # print(spec.dump())
-        print(yaml.dump(spec.dump(),
-                        default_style='',
-                        default_flow_style=False))
+
+        # print(yaml.dump(spec.dump(),
+        #                 default_style='',
+        #                 default_flow_style=False))
 
         return spec
 
@@ -184,8 +190,6 @@ class RpmSpecParser(object):
                 continue
             if re.match(r'^%\w.*$', line[1]):
                 if re.match(r'^%if\s*.*$', line[1]):
-                    # if section.name == 'package':
-                    #     section = section.parent
                     section = section.subsection(name='if')
                     section.content.append(line)
                     section = section.subsection(name='_then')
