@@ -4,10 +4,11 @@ from pyrpmspec.rpm import RpmSpecParser
 
 import os
 import shutil
-import yaml
 import wget
+import yaml
 
-test_spec = 'http://pkgs.fedoraproject.org/cgit/rpms/postgresql.git/plain/postgresql.spec'
+test_spec = 'http://pkgs.fedoraproject.org/' \
+            'cgit/rpms/postgresql.git/plain/postgresql.spec'
 
 if os.path.exists('tmp'):
     shutil.rmtree('tmp')
