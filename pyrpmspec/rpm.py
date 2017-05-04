@@ -18,11 +18,6 @@ class RpmSpecParser(object):
                 'global': re.compile(r'^%global\s+(.*)$'),
             },
         },
-        '_root': {
-            'macros': {
-                'description': re.compile(r'^%description\s*$'),
-            },
-        },
         'description': {
             'keyword': 'description',
             'macros': {
