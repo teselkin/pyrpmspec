@@ -6,8 +6,8 @@ import sh
 
 import codecs
 
-from pyrpmspec.objects import (RpmSpecSource,
-    RpmSpecChangelogChange, RpmSpec)
+from pyrpmspec.objects import RpmSpec
+from pyrpmspec.objects import RpmSpecChangelogChange
 
 
 class RpmSpecParser(object):
@@ -32,16 +32,16 @@ class RpmSpecParser(object):
         'package': {
             'keyword': 'package',
             'macros': {
-                'description': re.compile(r'^%description\s+(.*)\s*$'),
-                'package': re.compile(r'^%package\s+(.*)\s*$'),
+                'description': re.compile(r'^%description\s+(?P<args>.*)\s*$'),
+                'package': re.compile(r'^%package\s+(?P<args>.*)\s*$'),
             },
         },
         'prep': {
             'keyword': 'prep',
             'macros': {
                 'prep': re.compile(r'^%prep\s*$'),
-                'setup': re.compile(r'^%setup\s*(.*)\s*$'),
-                'patch': re.compile(r'^%patch(\d+)\s+(.*)\s*$'),
+                'setup': re.compile(r'^%setup\s*(?P<args>.*)\s*$'),
+                'patch': re.compile(r'^%patch(\d+)\s+(?P<args>.*)\s*$'),
             },
         },
         'build': {
@@ -53,7 +53,7 @@ class RpmSpecParser(object):
         'configure': {
             'keyword': 'configure',
             'macros': {
-                'configure': re.compile(r'^%configure\s+(.*)\s*$'),
+                'configure': re.compile(r'^%configure\s+(?P<args>.*)\s*$'),
             },
         },
         'install': {
@@ -71,39 +71,39 @@ class RpmSpecParser(object):
         'pre': {
             'keyword': 'pre',
             'macros': {
-                'pre': re.compile(r'^%pre\s+(.*)\s*$'),
+                'pre': re.compile(r'^%pre\s+(?P<args>.*)\s*$'),
             },
         },
         'preun': {
             'keyword': 'preun',
             'macros': {
-                'preun': re.compile(r'^%preun\s+(.*)\s*$'),
+                'preun': re.compile(r'^%preun\s+(?P<args>.*)\s*$'),
             },
         },
         'post': {
             'keyword': 'post',
             'macros': {
-                'post': re.compile(r'^%post\s+(.*)\s*(.*)\s*$'),
+                'post': re.compile(r'^%post\s+(?P<args>.*)\s*$'),
             },
         },
         'postun': {
             'keyword': 'postun',
             'macros': {
-                'postun': re.compile(r'^%postun\s+(.*)\s*(.*)\s*$'),
+                'postun': re.compile(r'^%postun\s+(?P<args>.*)\s*$'),
             },
         },
         'files': {
             'keyword': 'files',
             'macros': {
-                'attr': re.compile(r'^%attr\(.*\).*$'),
-                'config': re.compile(r'^%config\(.*\).*'),
-                'defattr': re.compile(r'^%defattr\(.*\).*$'),
-                'dir': re.compile(r'^%dir\s+(.*)\s*$'),
-                'doc': re.compile(r'^%doc\s+(.*)\s*$'),
-                'docdir': re.compile(r'^%docdir\s+(.*)\s*$'),
-                'files': re.compile(r'^%files\s*(.*)\s*$'),
-                'lang': re.compile(r'^%lang\(.*\).*$'),
-                'verify': re.compile(r'%verify\s+.*$'),
+                'attr': re.compile(r'^%attr(?P<args>\(.*\).*)$'),
+                'config': re.compile(r'^%config(?P<args>\(.*\).*)'),
+                'defattr': re.compile(r'^%defattr(?P<args>\(.*\).*)$'),
+                'dir': re.compile(r'^%dir\s+(?P<args>.*)\s*$'),
+                'doc': re.compile(r'^%doc\s+(?P<args>.*)\s*$'),
+                'docdir': re.compile(r'^%docdir\s+(?P<args>.*)\s*$'),
+                'files': re.compile(r'^%files\s*(?P<args>.*)\s*$'),
+                'lang': re.compile(r'^%lang(?P<args>\(.*\).*)$'),
+                'verify': re.compile(r'%verify\s+(?P<args>.*)$'),
             },
         },
         'changelog': {
@@ -227,35 +227,64 @@ class RpmSpecParser(object):
                         section = section.parent
                     continue
 
-                section_name = self._section_name(line[1], section.name)
-                if section_name:
-                    # line contains new section keyword
-                    if section.name == 'if':
-                        # 'if' section allows subsections
-                        section = section.subsection(section_name)
-                    else:
-                        # Other sections don't
-                        section = section.parent.subsection(section_name)
-                    section.content.append(line)
-                else:
-                    section.content.append(line)
+                section, is_multisection = self.get_section(line[1], section)
+                section.content.append(line)
+                if is_multisection:
+                    section = section.subsection(name='_text')
             else:
                 section.content.append(line)
         return section.root
 
-    def _section_name(self, line, section=''):
-        for name, s in self.sections.items():
-            keyword = s.get('keyword', None)
-            if keyword is not None:
-                regexp = s.get('macros', {}).get(keyword, None)
-                if regexp.match(line):
-                    return name
-        return ''
+    def get_section(self, line, section=None):
+
+        if section.name == '_root':
+            for name, s in self.sections.items():
+                keyword = s.get('keyword', None)
+                macros = s.get('macros', {})
+                if keyword is not None:
+                    regexp = macros.get(keyword, None)
+                    m = regexp.match(line)
+                    if m:
+                        section = section.subsection(name)
+                        try:
+                            section.args = m.group('args')
+                        except IndexError:
+                            pass
+                        return section, len(macros) > 1
+            return None, 0
+
+        keyword = self.sections.get(section.parent.name, {})\
+            .get('keyword', None)
+        macros = self.sections.get(section.parent.name, {}).get('macros', {})
+        for name, regexp in macros.items():
+            if name == keyword:
+                continue
+            m = regexp.match(line)
+            if m:
+                if section.name == '_text':
+                    section = section.subsection(name)
+                else:
+                    section = section.parent.subsection(name)
+                try:
+                    section.args = m.group('args')
+                except IndexError:
+                    pass
+                return section, len(macros) > 1
+
+        if section.parent.name in ['_if', '_then', '_else']:
+            return section, False
+
+        result = self.get_section(line, section.parent)
+        if result[0] is None:
+            return section, False
+        else:
+            return result
 
 
 class RpmSpecSection(object):
     def __init__(self, name='_root', parent=None, root=None):
         self.name = name
+        self.args = ''
         if root is None:
             self._root = self
             self._parent = self
