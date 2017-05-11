@@ -14,8 +14,8 @@ class RpmSpecParser(object):
     sections = {
         '_global': {
             'macros': {
-                'define': re.compile(r'^%define\s+(.*)\s*$'),
-                'global': re.compile(r'^%global\s+(.*)$'),
+                'define': re.compile(r'^%define\s+(?P<args>.*)\s*$'),
+                'global': re.compile(r'^%global\s+(?P<args>.*)$'),
             },
         },
         'description': {
@@ -55,6 +55,12 @@ class RpmSpecParser(object):
             'keyword': 'install',
             'macros': {
                 'install': re.compile(r'^%install\s*$'),
+            },
+        },
+        'check': {
+            'keyword': 'check',
+            'macros': {
+                'check': re.compile(r'^%check\s*$'),
             },
         },
         'clean': {
@@ -190,116 +196,203 @@ class RpmSpecParser(object):
 
     def split(self, content):
         section = RpmSpecSection()
-        section = section.subsection(name='_text')
+        root = section.root
         lineno = 0
         for linestr in content:
             lineno += 1
             line = (lineno, linestr)
             if re.match(r'^\s*$', line[1]):
-                section.content.append(line)
+                section.add_content(line)
                 continue
             if re.match(r'^%\w.*$', line[1]):
                 if re.match(r'^%if\s*.*$', line[1]):
                     section = section.subsection(name='if')
-                    section.content.append(line)
+                    section.add_content(line)
                     section = section.subsection(name='_then')
                     continue
 
                 if re.match(r'^%else\s*.*$', line[1]):
                     while section.name != 'if':
                         section = section.parent
-                    section.content.append(line)
+                    section.add_content(line)
                     section = section.subsection(name='_else')
                     continue
 
                 if re.match(r'^%endif\s*.*$', line[1]):
                     while section.name != 'if':
                         section = section.parent
-                    section.content.append(line)
-                    if section.parent.name == '_root':
-                        section = section.parent.subsection(name='_text')
-                    else:
-                        section = section.parent
+                    section.add_content(line)
+                    if root.var.get('move_section', None) == section:
+                        section = section.move()
+                    section = section.parent
                     continue
 
-                section, is_multisection = self.get_section(line[1], section)
-                section.content.append(line)
-                if is_multisection:
-                    section = section.subsection(name='_text')
+                merge = False
+                parent, section_name, groups = self\
+                    .get_parent(line[1], section)
+                if section_name is None:
+                    parent, section_name, groups = self\
+                        .get_parent(line[1], section, full_scan=False)
+                    merge = True
+                if root.var.get('move_section'):
+                    root.var.setdefault('new_parent', parent)
+                    if root.var['new_parent'].level > parent.level:
+                        root.var['new_parent'] = parent
+                    section = section.subsection(section_name)
+                    continue
+
+                if section_name:
+                    section = parent.subsection(section_name, merge=merge)
+                if not merge:
+                    section.args = groups.get('args', '')
+
+                section.add_content(line)
             else:
-                section.content.append(line)
-        return section.root
+                section.add_content(line)
+        return root
 
-    def get_section(self, line, section=None):
+    def get_parent(self, line, section, full_scan=True):
+        # Create reversed tree of sections (from current at [0]
+        # down to _root at [-1])
+        tree = []
+        while section.name != '_root':
+            tree.append(section)
+            section = section.parent
+        tree.append(section)
 
-        if section.name == '_root':
-            for name, s in self.sections.items():
-                keyword = s.get('keyword', None)
-                macros = s.get('macros', {})
-                if keyword is not None:
-                    regexp = macros.get(keyword, None)
-                    m = regexp.match(line)
-                    if m:
-                        section = section.subsection(name)
-                        try:
-                            section.args = m.group('args')
-                        except IndexError:
-                            pass
-                        return section, len(macros) > 1
-            return None, 0
-
-        keyword = self.sections.get(section.parent.name, {})\
-            .get('keyword', None)
-        macros = self.sections.get(section.parent.name, {}).get('macros', {})
-        for name, regexp in macros.items():
-            if name == keyword:
+        section_ptr = 0
+        for section in tree:
+            # If section name is meaningless, skip it
+            if section.name in ['_text', 'if', '_then', '_else']:
+                section_ptr += 1
                 continue
-            m = regexp.match(line)
-            if m:
-                if section.name == '_text':
-                    section = section.subsection(name)
+
+            section_name, groups = self.parse_line(line, section)
+            if section_name is None:
+                if full_scan:
+                    continue
                 else:
-                    section = section.parent.subsection(name)
-                try:
-                    section.args = m.group('args')
-                except IndexError:
-                    pass
-                return section, len(macros) > 1
+                    section = tree[section_ptr]
+                    return section.parent, section.name, groups
 
-        if section.parent.name in ['_if', '_then', '_else']:
-            return section, False
+            if section.name == '_root':
+                return tree[-1], section_name, groups
+            else:
+                return tree[section_ptr], section_name, groups
 
-        result = self.get_section(line, section.parent)
-        if result[0] is None:
-            return section, False
+        return tree[-1], None, groups
+
+    def parse_line(self, line, section):
+        if section.name == '_root':
+            for name, schema in self.sections.items():
+                keyword = schema.get('keyword', None)
+                if keyword is None:
+                    continue
+                macros = schema.get('macros', {})
+                regexp = macros.get(keyword, None)
+                m = regexp.match(line)
+                if m:
+                    return name, m.groupdict()
         else:
-            return result
+            schema = self.sections.get(section.name, {})
+            keyword = schema.get('keyword', None)
+            macros = schema.get('macros', {})
+            for name, regexp in macros.items():
+                if name == keyword:
+                    continue
+                m = regexp.match(line)
+                if m:
+                    return name, m.groupdict()
+        return None, {}
 
 
 class RpmSpecSection(object):
-    def __init__(self, name='_root', parent=None, root=None):
+    def __init__(self, name='_root', parent=None, root=None, level=None):
         self.name = name
         self.args = ''
+        self.var = {}
+
         if root is None:
             self._root = self
             self._parent = self
+            self.level = 0
         else:
             self._root = root
             self._parent = parent
+            self.level = parent.level + 1
+
+        if level:
+            self.level = level
+
         self._subsections = []
         self._content = []
+
+        if self.name == 'if':
+            self._root.var.setdefault('move_section', self)
+            self._root.var.setdefault('new_parent', self._parent)
 
     def __iter__(self):
         for section in self._subsections:
             yield section
 
-    def subsection(self, name):
-        if self.name in ['_text', '_then', '_else']:
-            section = self._parent.subsection(name)
-        else:
-            section = RpmSpecSection(name=name, parent=self, root=self.root)
-            self._subsections.append(section)
+    def subsection(self, name, merge=True):
+        # Only one section could be '_root'
+        if name == '_root':
+            return self._root
+
+        # ['_text', ] section(s) can't have subsections,
+        # so create one from it's parent, or return existing
+        if self.name == '_text':
+            if name == '_text':
+                return self
+            else:
+                section = self._parent.subsection(name)
+                return section
+
+        # Some sections could be merged
+        if len(self._subsections):
+            if self._subsections[-1].name == name:
+                if merge:
+                    return self._subsections[-1]
+
+        if self.name == 'if':
+            if name not in ['_then', '_else']:
+                raise Exception("'if' allows only '_then' or '_else' sections")
+
+        section = RpmSpecSection(name=name, parent=self, root=self.root)
+        self._subsections.append(section)
+
         return section
+
+    def move(self, section=None, parent=None):
+        if section is None:
+            section = self._root.var.pop('move_section', self)
+        if parent is None:
+            parent = self._root.var.pop('new_parent', None)
+        section.parent.remove_section(section)
+        parent.add_section(section)
+        section._parent = parent
+        return section
+
+    def add_section(self, section):
+        self._subsections.append(section)
+
+    def remove_section(self, section):
+        self._subsections.remove(section)
+
+    def add_content(self, line):
+        if self.name == 'if':
+            self.content.append(line)
+            return
+
+        if len(self._subsections) == 0:
+            section = self.subsection(name='_text')
+        else:
+            if self._subsections[-1].name == '_text':
+                section = self._subsections[-1]
+            else:
+                section = self.subsection(name='_text')
+        section.content.append(line)
 
     @property
     def sections(self):
@@ -316,3 +409,6 @@ class RpmSpecSection(object):
     @property
     def content(self):
         return self._content
+
+    def __str__(self):
+        return '{} ({})'.format(self.name, self.args)

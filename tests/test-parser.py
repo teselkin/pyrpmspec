@@ -15,7 +15,7 @@ if os.path.exists('tmp'):
 os.mkdir('tmp')
 wget.download(test_spec, out='tmp')
 
-parser = RpmSpecParser()
+parser = RpmSpecParser(use_rpmspec=True)
 parsed = parser.parse('tmp/postgresql.spec')
 for spec in parsed:
     print(yaml.dump(spec.dump(),
