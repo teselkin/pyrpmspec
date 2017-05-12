@@ -205,8 +205,10 @@ class RpmSpecParser(object):
                 section.add_content(line)
                 continue
             if re.match(r'^%\w.*$', line[1]):
-                if re.match(r'^%if\s*.*$', line[1]):
+                match = re.match(r'^%if\s*(?P<args>.*)$', line[1])
+                if match:
                     section = section.subsection(name='if')
+                    section.args = match.groupdict().get('args', '')
                     section.add_content(line)
                     section = section.subsection(name='_then')
                     continue
@@ -228,12 +230,12 @@ class RpmSpecParser(object):
                     continue
 
                 merge = False
-                parent, section_name, groups = self\
-                    .get_parent(line[1], section)
+                parent, section_name, groups =\
+                    self.get_parent(line[1], section)
                 if section_name is None:
-                    parent, section_name, groups = self\
-                        .get_parent(line[1], section, full_scan=False)
                     merge = True
+                    parent, section_name, groups =\
+                        self.get_parent(line[1], section, full_scan=False)
                 if root.var.get('move_section'):
                     root.var.setdefault('new_parent', parent)
                     if root.var['new_parent'].level > parent.level:
@@ -243,6 +245,7 @@ class RpmSpecParser(object):
 
                 if section_name:
                     section = parent.subsection(section_name, merge=merge)
+
                 if not merge:
                     section.args = groups.get('args', '')
 
@@ -381,7 +384,7 @@ class RpmSpecSection(object):
         self._subsections.remove(section)
 
     def add_content(self, line):
-        if self.name == 'if':
+        if self.name in ['if', 'changelog']:
             self.content.append(line)
             return
 
